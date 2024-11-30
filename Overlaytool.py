@@ -91,6 +91,23 @@ class OverlayToolApp:
             self.chroma_key_entry.config(state="disabled")
         else:
             self.chroma_key_entry.config(state="normal")
+        self.update_output_extension()
+
+    def update_output_extension(self):
+        """Update the output file extension based on the transparent background checkbox."""
+        current_path = self.output_path.get()
+        if not current_path:
+            return
+
+        # Determine the new file extension
+        new_extension = ".mov" if self.transparent_background.get() else ".mp4"
+
+        # Split the current path and replace the extension
+        base_name, _ = os.path.splitext(current_path)
+        updated_path = base_name + new_extension
+
+        # Update the output path
+        self.output_path.set(updated_path)
 
     # Button methods
     def browse_osd_file(self):
@@ -109,8 +126,10 @@ class OverlayToolApp:
         if input_path:
             output_path = os.path.splitext(input_path)[0] + '_OSD.mov'  # Append "_OSD" to avoid overwriting
             self.output_path.set(output_path)
+            self.update_output_extension()
         else:
             messagebox.showerror("Error", "Please select an OSD file first.")
+
 
     def browse_hex_grid_csv(self):
         filename = filedialog.askopenfilename(initialdir='maps', title="Select Hex Grid CSV",
@@ -160,7 +179,8 @@ class OverlayToolApp:
 
             output_path = self.output_path.get()
             if not output_path:
-                output_path = os.path.splitext(self.osd_file_path.get())[0] + '_OSD.mov'  # Default to _OSD.mov
+                extension = ".mov" if self.transparent_background.get() else ".mp4"
+                output_path = os.path.splitext(self.osd_file_path.get())[0] + '_OSD' + extension  # Default to _OSD.mov or _OSD.mp4
 
             def update_progress(percentage, remaining_time=None):
                 self.progress_bar['value'] = percentage

@@ -67,16 +67,16 @@ class TransparentVideoMaker:
         self.tile_cache[hex_value] = tile_array
         return tile_array
 
-    def get_value_from_grid(self, osd_hex_value):
-        """Look up the hex grid for the value corresponding to the OSD hex value."""
+    def get_value_from_grid(self, osd_value):
+        """Look up the hex grid for the value corresponding to the OSD integer value."""
         try:
-            decimal_value = int(osd_hex_value, 16)
-            row, col = divmod(decimal_value, 16)
+            # Compute row and column directly from the decimal value
+            row, col = divmod(osd_value, 16)
             if 0 <= row < self.hex_grid.shape[0] and 0 <= col < self.hex_grid.shape[1]:
                 return self.hex_grid.iat[row, col]
             else:
                 return '00'
-        except ValueError:
+        except (ValueError, TypeError):
             return '00'
 
     def render_frame_with_alpha(self, frame_content):
@@ -85,14 +85,14 @@ class TransparentVideoMaker:
         char_height = self.osd_reader.header["config"]["charHeight"]
         frame = np.zeros((self.RESOLUTION[1], self.RESOLUTION[0], 4), dtype=np.uint8)  # RGBA frame
 
-        # Render each tile in the grid
+        # Convert frame content into a grid and render each tile
         for i in range(char_height):
             for j in range(char_width):
                 index = i * char_width + j
                 if index < len(frame_content):
-                    osd_hex_value = f"{frame_content[index]:02X}"
-                    new_hex_value = self.get_value_from_grid(osd_hex_value)
-                    tile = self.get_tile_with_alpha(new_hex_value)
+                    osd_value = frame_content[index]
+                    new_value = self.get_value_from_grid(osd_value) 
+                    tile = self.get_tile_with_alpha(new_value)
                     x, y = int(j * self.TILE_WIDTH), int(i * self.TILE_HEIGHT)
 
                     # Place the tile onto the frame, preserving transparency

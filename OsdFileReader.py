@@ -5,12 +5,12 @@ import tkinter as tk
 from tkinter import filedialog
 
 class OsdFileReader:
-    def __init__(self, file_path):
+    def __init__(self, file_path, framerate = 60):
         self.file_path = file_path
         self.header = {}
         self.frame_data = pd.DataFrame(columns=["timestamp", "frameNumber", "frameSize", "frameContent"])
         self.parsed_data_df = None  # Dictionary to store parsed data for each frame
-        self.frame_rate = None
+        self.frame_rate = framerate
         self.duration = None
         self.load_file()
 
@@ -29,35 +29,57 @@ class OsdFileReader:
                 'fontVariant': file.read(5).decode('utf-8').strip('\x00')
             }
 
-            # Read frames based on version
+            # Read frames
             frames = []
+            height = self.header['config']['charHeight']
             while True:
                 try:
                     if self.header['version'] == 3:
                         # Version 3: Timestamp + Frame Size
-                        timestamp, = struct.unpack('<d', file.read(8))
-                        frame_size, = struct.unpack('<I', file.read(4))
-                        frame_data = file.read(frame_size)
+                        timestamp, = struct.unpack('<d', file.read(8))  # Read timestamp (8 bytes)
+                        frame_size, = struct.unpack('<I', file.read(4))  # Read frame size (4 bytes)
+
+                        # Read 'frame_size' bytes, store each byte as an integer
+                        frame_data = list(file.read(frame_size))  # Converts bytes into a list of integers
                         frames.append({
                             "timestamp": timestamp,
                             "frameNumber": None,
                             "frameSize": frame_size,
-                            "frameContent": frame_data
+                            "frameContent": frame_data  # List of integers
                         })
-                    else:
-                        # Versions 1 and 2: Frame Number + Frame Size
-                        frame_number, frame_size = struct.unpack('<II', file.read(8))
-                        frame_data = file.read(frame_size)
+                        
+
+                    elif self.header['version'] == 2:
+                        # Version 2: Frame Number + Frame Size
+                        frame_number, frame_size = struct.unpack('<II', file.read(8))  # Read frame number and size (8 bytes)
+
+                        # Read '2 * frame_size' bytes and convert every two bytes into a 16-bit integer
+                        raw_data = file.read(2 * frame_size)
+                        frame_data = [
+                            struct.unpack('<H', raw_data[i:i + 2])[0]  # Create integer from 2 bytes
+                            for i in range(0, len(raw_data), 2)
+                        ]
+
+                        #Need to transform the data form column by column to line by line
+                        frame_data = [frame_data[i * height + j] for j in range(height) for i in range(len(frame_data)//height)]
+
                         frames.append({
                             "timestamp": None,
                             "frameNumber": frame_number,
                             "frameSize": frame_size,
-                            "frameContent": frame_data
+                            "frameContent": frame_data  # List of 16-bit integers
                         })
+
+                    else:
+
+                        # Unsupported version
+                        print(f"Unsupported version: {self.header['version']}")
+                        break
                 except (struct.error, EOFError):
-                    break  # End of file reached or incomplete frame data
+                    break  # End of file or incomplete frame data
 
             self.frame_data = pd.DataFrame(frames)
+            self.generate_pseudo_frames(60)
 
     def print_info(self):
         print("Header Information:")

@@ -86,16 +86,16 @@ class VideoMaker:
         self.tile_cache[hex_value] = blended_tile_bgr
         return blended_tile_bgr
 
-    def get_value_from_grid(self, osd_hex_value):
-        """Look up the hex grid for the value corresponding to the OSD hex value."""
+    def get_value_from_grid(self, osd_value):
+        """Look up the hex grid for the value corresponding to the OSD integer value."""
         try:
-            decimal_value = int(osd_hex_value, 16)
-            row, col = divmod(decimal_value, 16)
+            # Compute row and column directly from the decimal value
+            row, col = divmod(osd_value, 16)
             if 0 <= row < self.hex_grid.shape[0] and 0 <= col < self.hex_grid.shape[1]:
                 return self.hex_grid.iat[row, col]
             else:
                 return '00'
-        except ValueError:
+        except (ValueError, TypeError):
             return '00'
 
     def render_frame(self, frame_content):
@@ -109,11 +109,14 @@ class VideoMaker:
             for j in range(char_width):
                 index = i * char_width + j
                 if index < len(frame_content):
-                    osd_hex_value = f"{frame_content[index]:02X}"
-                    new_hex_value = self.get_value_from_grid(osd_hex_value)
-                    tile = self.get_preblended_tile(new_hex_value)
+                    osd_value = frame_content[index] 
+                    new_value = self.get_value_from_grid(osd_value) 
+                    tile = self.get_preblended_tile(new_value)
+
+                    # Calculate the tile's position on the frame
                     x, y = int(j * self.TILE_WIDTH), int(i * self.TILE_HEIGHT)
                     frame[y:y + tile.shape[0], x:x + tile.shape[1]] = tile
+
         return frame
 
     def create_video(self, output_path, progress_callback=None):
