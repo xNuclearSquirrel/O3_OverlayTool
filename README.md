@@ -18,7 +18,7 @@ Run OverlayTool.py to launch the GUI.
 - FFMPEG (when using transparent backgrounds)
 
 ## TODO
-- Add support for other .osd file format. Such as Vist .osd files or Walksnail .osd files.
+- Add support for other .osd file format. Such as ~~Vista .osd files~~(done) or Walksnail .osd files.
 
 ## Credits
 Credits to the fpv-wtf devs for making this possible and to SNEAKY_FPV for the fonts! More fonts available at https://sites.google.com/view/sneaky-fpv/home
