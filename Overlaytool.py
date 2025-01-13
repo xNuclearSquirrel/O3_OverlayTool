@@ -6,6 +6,8 @@ from VideoMaker import VideoMaker
 from TransparentVideoMaker import TransparentVideoMaker  # Import the new TransparentVideoMaker class
 import time
 from OsdFileReader import OsdFileReader
+from VideoMerger import VideoMerger
+from proglog import TqdmProgressBarLogger
 
 class OverlayToolApp:
     def __init__(self, root):
@@ -17,16 +19,19 @@ class OverlayToolApp:
 
         # Initialize variables with default paths
         self.osd_file_path = tk.StringVar()
-        self.output_path = tk.StringVar()
+        self.output_path = tk.StringVar()        
+        self.input_path = tk.StringVar()
+        self.final_path = tk.StringVar()
         self.hex_grid_csv_path = tk.StringVar(value='maps/standard.csv')
         self.font_image_path = tk.StringVar(value='fonts/WS_BFx4_Nexus_Moonlight_2160p.png')
         self.chroma_key_hex = tk.StringVar(value='FF00FF')  # Default to magenta
         self.fps = tk.DoubleVar(value=30.0)
-        self.transparent_background = tk.BooleanVar(value=False)  # Checkbox for transparency
+        self.transparent_background = tk.BooleanVar(value=True)  # Checkbox for transparency
 
         # Initialize placeholder variables for VideoMaker and OsdFileReader
         self.video_maker = None
         self.osd_reader = None
+        self.video_merger= None
 
         # Build the GUI
         self.create_widgets()
@@ -41,13 +46,17 @@ class OverlayToolApp:
         ttk.Entry(input_frame, textvariable=self.osd_file_path, width=50).grid(row=0, column=1, sticky='we', padx=5, pady=5)
         ttk.Button(input_frame, text="Browse...", command=self.browse_osd_file).grid(row=0, column=2, padx=5, pady=5)
 
-        # Output path
-        ttk.Label(input_frame, text="Output File:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
-        ttk.Entry(input_frame, textvariable=self.output_path, width=50).grid(row=1, column=1, sticky='we', padx=5, pady=5)
-        ttk.Button(input_frame, text="Browse...", command=self.browse_output_path).grid(row=1, column=2, padx=5, pady=5)
+        # Input path
+        ttk.Label(input_frame, text="Input MOV File:").grid(row=1, column=0, sticky='e', padx=5, pady=5)
+        ttk.Entry(input_frame, textvariable=self.input_path, width=50).grid(row=1, column=1, sticky='we', padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse...", command=self.browse_input_path).grid(row=1, column=2, padx=5, pady=5)
+        # Final Output path
+        ttk.Label(input_frame, text="Output Merged File:").grid(row=2, column=0, sticky='e', padx=5, pady=5)
+        ttk.Entry(input_frame, textvariable=self.final_path, width=50).grid(row=2, column=1, sticky='we', padx=5, pady=5)
+        ttk.Button(input_frame, text="Browse...", command=self.browse_final_path).grid(row=2, column=2, padx=5, pady=5)
 
         # Button to set output path same as input
-        ttk.Button(input_frame, text="Same as Input", command=self.set_output_same_as_input).grid(row=2, column=1, sticky='w', padx=5, pady=5)
+        #ttk.Button(input_frame, text="Same as Input", command=self.set_output_same_as_input).grid(row=2, column=1, sticky='w', padx=5, pady=5)
 
         # Hex grid CSV path
         ttk.Label(input_frame, text="Hex Grid CSV:").grid(row=3, column=0, sticky='e', padx=5, pady=5)
@@ -60,10 +69,10 @@ class OverlayToolApp:
         ttk.Button(input_frame, text="Browse...", command=self.browse_font_image).grid(row=4, column=2, padx=5, pady=5)
 
         # Transparent Background checkbox and Chroma Key
-        ttk.Checkbutton(input_frame, text="Transparent Background", variable=self.transparent_background, command=self.toggle_chroma_key).grid(row=5, column=1, sticky='w', padx=5, pady=5)
-        ttk.Label(input_frame, text="Chroma Key Hex:").grid(row=6, column=0, sticky='e', padx=5, pady=5)
-        self.chroma_key_entry = ttk.Entry(input_frame, textvariable=self.chroma_key_hex)
-        self.chroma_key_entry.grid(row=6, column=1, sticky='w', padx=5, pady=5)
+        #ttk.Checkbutton(input_frame, text="Transparent Background", variable=self.transparent_background, command=self.toggle_chroma_key).grid(row=5, column=1, sticky='w', padx=5, pady=5)
+        #ttk.Label(input_frame, text="Chroma Key Hex:").grid(row=6, column=0, sticky='e', padx=5, pady=5)
+        #self.chroma_key_entry = ttk.Entry(input_frame, textvariable=self.chroma_key_hex)
+        #self.chroma_key_entry.grid(row=6, column=1, sticky='w', padx=5, pady=5)
 
         # FPS
         ttk.Label(input_frame, text="FPS:").grid(row=7, column=0, sticky='e', padx=5, pady=5)
@@ -121,6 +130,18 @@ class OverlayToolApp:
         if filename:
             self.output_path.set(filename)
 
+    def browse_final_path(self):
+        filename = filedialog.asksaveasfilename(title="Select final file", defaultextension=".mov",
+                                                filetypes=(("MOV files", "*.mov"), ("All files", "*.*")))
+        if filename:
+            self.final_path.set(filename)
+
+
+    def browse_input_path(self):
+        filename = filedialog.askopenfilename(title="Select MOV file", filetypes=(("MOV files", "*.mov"), ("All files", "*.*")))
+        if filename:
+            self.input_path.set(filename)
+
     def set_output_same_as_input(self):
         input_path = self.osd_file_path.get()
         if input_path:
@@ -177,10 +198,10 @@ class OverlayToolApp:
                 )
             print("VideoMaker initialized successfully.")
 
-            output_path = self.output_path.get()
-            if not output_path:
-                extension = ".mov" if self.transparent_background.get() else ".mp4"
-                output_path = os.path.splitext(self.osd_file_path.get())[0] + '_OSD' + extension  # Default to _OSD.mov or _OSD.mp4
+            #output_path = self.output_path.get()
+            #if not output_path:
+            extension = ".mov" if self.transparent_background.get() else ".mp4"
+            output_path = os.path.splitext(self.final_path.get())[0] + '_OSD' + extension  # Default to _OSD.mov or _OSD.mp4
 
             def update_progress(percentage, remaining_time=None):
                 self.progress_bar['value'] = percentage
@@ -208,8 +229,34 @@ class OverlayToolApp:
                             f"Processed {frame_num} frames; estimated remaining time: {estimated_remaining_time:.2f} seconds")
 
             self.video_maker.create_video(output_path, progress_callback=progress_callback)
-            print("Video creation process completed.")
-            messagebox.showinfo("Success", f"Video created successfully at {output_path}")
+            print("Video creation process completed.")  
+            
+            print("Starting video merging process...")
+            start_time = time.time()
+            class MyBarLogger(TqdmProgressBarLogger):
+                def callback(self, **changes):
+                    try:
+                        index = self.state['bars']['frame_index']['index']
+                        total = self.state['bars']['frame_index']['total']
+                        update_progress(index / total * 100)
+                        if index % 10 == 0 and index > 0:
+                            elapsed_time = time.time() - start_time
+                            frames_processed = index
+                            frames_remaining = total - frames_processed
+                            if frames_remaining > 0:
+                                estimated_remaining_time = (elapsed_time / frames_processed) * frames_remaining
+                                update_progress(index / total * 100, estimated_remaining_time)
+                    except KeyError as e:
+                        print(f"{self.state}")
+
+            my_logger = MyBarLogger()
+            self.video_merger = VideoMerger()
+            
+            final_path = self.final_path.get()
+            input_path = self.input_path.get()
+            self.video_merger.merge_overlay(input_path,output_path,final_path, progress_callback=my_logger)
+            messagebox.showinfo("Success", f"Video created successfully at {final_path}")
+            os.remove(output_path)
 
         except Exception as e:
             print(f"Error occurred: {e}")
