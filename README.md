@@ -15,7 +15,7 @@ Run OverlayTool.py to launch the GUI.
 
 ## Required libraries
 - numpy, pandas, opencv-python, pillow
-- FFMPEG (when using transparent backgrounds)
+- ~~FFMPEG (when using transparent backgrounds)~~ included now
 
 ## TODO
 - Add support for other .osd file format. Such as ~~Vista .osd files~~(done) or Walksnail .osd files.
