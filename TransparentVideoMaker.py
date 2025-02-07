@@ -24,7 +24,20 @@ class TransparentVideoMaker:
         self.font_image = self.load_font_image()
         self.tile_cache = {}
 
-        # Set resolution and tile sizes
+        # We assume 256 rows. Each tile has a 1:1.5 width:height ratio,
+        # i.e. tile_width = tile_height / 1.5
+        self.num_rows = 256
+        self.tile_height = self.font_image.height / self.num_rows
+        self.tile_width = self.tile_height / 1.5  # 1:1.5 => ~0.6667
+
+        # Detect how many columns the font image physically supports.
+        self.num_columns = int(self.font_image.width // self.tile_width)
+        if self.num_columns < 1:
+            self.num_columns = 1
+        elif self.num_columns > 4:
+            self.num_columns = 4
+
+        # Compute final resolution
         self.TILE_WIDTH, self.TILE_HEIGHT, self.RESOLUTION = self.compute_tile_and_resolution()
 
     def load_font_image(self):
@@ -34,39 +47,45 @@ class TransparentVideoMaker:
             raise ValueError(f"Failed to load font image: {e}")
 
     def compute_tile_and_resolution(self):
-        num_columns = 4
-        num_rows = 256
-        tile_width = self.font_image.width / num_columns
-        tile_height = self.font_image.height / num_rows
+        """
+        The tile_width & tile_height are known from the ratio (1:1.5).
+        Then we multiply by the OSD config to get final resolution.
+        """
+        tile_w = self.tile_width
+        tile_h = self.tile_height
 
         grid_width = self.osd_reader.header['config']['charWidth']
         grid_height = self.osd_reader.header['config']['charHeight']
+
         resolution = (
-            int(grid_width * tile_width),
-            int(grid_height * tile_height)
+            int(grid_width * tile_w),
+            int(grid_height * tile_h)
         )
-        return tile_width, tile_height, resolution
+        return tile_w, tile_h, resolution
 
     def get_tile_with_alpha(self, tile_index):
+        """
+        Convert tile_index -> column,row. If out of range, clamp.
+        Then crop from the font image or create a blank tile.
+        """
         if tile_index in self.tile_cache:
             return self.tile_cache[tile_index]
 
         column = tile_index // 256
         row = tile_index % 256
 
-        if column > 3 or row > 255:
-            blank_tile = Image.new('RGBA', (int(self.TILE_WIDTH), int(self.TILE_HEIGHT)), (0, 0, 0, 0))
-            tile_array = np.array(blank_tile)
-            self.tile_cache[tile_index] = tile_array
-            return tile_array
+        if column >= self.num_columns:
+            column = self.num_columns - 1
+        if row > 255:
+            row = 255
 
-        left = int(column * self.TILE_WIDTH)
-        upper = int(row * self.TILE_HEIGHT)
-        right = int(left + self.TILE_WIDTH)
-        lower = int(upper + self.TILE_HEIGHT)
+        left = int(column * self.tile_width)
+        upper = int(row * self.tile_height)
+        right = int(left + self.tile_width)
+        lower = int(upper + self.tile_height)
 
         if right > self.font_image.width or lower > self.font_image.height:
-            tile = Image.new('RGBA', (int(self.TILE_WIDTH), int(self.TILE_HEIGHT)), (0, 0, 0, 0))
+            tile = Image.new('RGBA', (int(self.tile_width), int(self.tile_height)), (0, 0, 0, 0))
         else:
             tile = self.font_image.crop((left, upper, right, lower))
 
@@ -75,6 +94,9 @@ class TransparentVideoMaker:
         return tile_array
 
     def render_frame_with_alpha(self, frame_content):
+        """
+        Render a frame with an alpha channel by placing tiles onto an RGBA array.
+        """
         char_width = self.osd_reader.header["config"]["charWidth"]
         char_height = self.osd_reader.header["config"]["charHeight"]
         frame = np.zeros((self.RESOLUTION[1], self.RESOLUTION[0], 4), dtype=np.uint8)
@@ -94,12 +116,9 @@ class TransparentVideoMaker:
         return frame
 
     def create_video(self, output_path, progress_callback=None):
-        # 1) Get the local path to ffmpeg.exe
         ffmpeg_path = resource_path(r"ffmpeg\bin\ffmpeg.exe")
-
-        # 2) Build the command with ffmpeg_path at the start
         ffmpeg_command = [
-            ffmpeg_path,        # <-- must be first item to actually call ffmpeg.exe
+            ffmpeg_path,
             "-y",
             "-f", "rawvideo",
             "-vcodec", "rawvideo",
@@ -113,8 +132,8 @@ class TransparentVideoMaker:
         ]
 
         process = subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
-
         blocks = self.osd_reader.frame_data.to_dict(orient="records")
+
         start_time = blocks[0]['timestamp']
         end_time = blocks[-1]['timestamp']
         num_frames = int((end_time - start_time) * self.fps) + 1
@@ -126,8 +145,10 @@ class TransparentVideoMaker:
         for frame_num in range(num_frames):
             current_time = start_time + frame_num / self.fps
 
-            while (current_block_index + 1 < len(blocks) and
-                   current_time >= blocks[current_block_index + 1]['timestamp']):
+            while (
+                current_block_index + 1 < len(blocks)
+                and current_time >= blocks[current_block_index + 1]['timestamp']
+            ):
                 current_block_index += 1
 
             if frame_num % 100 == 0:

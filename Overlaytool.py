@@ -23,7 +23,7 @@ class OverlayToolApp:
         self.font_image_path = tk.StringVar(value='fonts/WS_BFx4_Nexus_Moonlight_2160p.png')
         self.chroma_key_hex = tk.StringVar(value='FF00FF')  # Default to magenta
         self.fps = tk.DoubleVar(value=30.0)
-        self.transparent_background = tk.BooleanVar(value=False)  # Checkbox for transparency
+        self.transparent_background = tk.BooleanVar(value=True)  # Checkbox for transparency
 
         # Placeholder variables for VideoMaker and OsdFileReader
         self.video_maker = None
