@@ -3,7 +3,7 @@
 A Tool for rendering videos from .osd files recorded from the O3 Air unit.
 
 ## NOTES
-- A standalone EXE has been added in the release section. Works without any libraries etc. I recommend using that one, it is a bit faster.
+- A standalone EXE has been added in the release section. Works without any libraries etc. I recommend using that one, it is a bit simpler.
 
 - This is a work in progress, there might be bugs.
 - The tool doesn't directly overlay over footage, it simply creates the OSD frames on top of a chroma key or a transparent background. The overlaying needs to be done in a video editor.
