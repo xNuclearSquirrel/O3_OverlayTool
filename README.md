@@ -28,3 +28,8 @@ The portable version should work without any libraries.
 
 ## Credits
 Credits to the fpv-wtf devs for making this possible and to SNEAKY_FPV for the fonts! More fonts available at https://sites.google.com/view/sneaky-fpv/home
+
+## Support the Project 💖
+Everything I make is free but if you find this project useful, consider donating to support development!
+
+[![Donate via PayPal](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/donate/?hosted_button_id=BSA49E6J5DLM4)
