@@ -1,9 +1,7 @@
 import struct
 import pandas as pd
-import time
 import tkinter as tk
 from tkinter import filedialog
-
 
 class OsdFileReader:
     def __init__(self, file_path, framerate=60):
@@ -17,101 +15,100 @@ class OsdFileReader:
 
     def load_file(self):
         with open(self.file_path, 'rb') as file:
-            # Read 40 bytes to see if last 4 bytes are "DJO3"
-            first_40 = file.read(40)
-            if len(first_40) < 40:
-                # Not even a 40-byte header, fallback to old format
+            header_bytes = file.read(40)
+            if len(header_bytes) < 40:
+                # Not enough for a full header; fallback to old format
                 file.seek(0)
                 self._parse_old_format(file)
                 return
 
-            # Check if last 4 bytes are "DJO3"
-            if first_40[-4:] == b"DJO3":
-                # We have the new DJO3 format
-                self._parse_djo3_format(file, first_40)
-            else:
-                # Fall back to older .osd version logic
+            # Check if the magic string is "MSPOSD\0"
+            if header_bytes[:7] == b"MSPOSD\x00":
                 file.seek(0)
                 self._parse_old_format(file)
+                return
 
-        # Once frames are loaded, generate timestamps or frameNumbers if needed
+            # Otherwise, use the DJI/DJO3 parser
+            self._parse_djo3_format(file, header_bytes)
+
+        # Generate missing timestamps or frame numbers as needed
         self.generate_pseudo_frames(self.frame_rate)
 
     def _parse_djo3_format(self, file, header_bytes):
         """
-        Parse the new DJO3 file structure:
-         - 40-byte header (already read as header_bytes)
-         - Repeated frames of:
-             [4 bytes of delta_time in ms] + [1060 x 2 bytes (uint16_t each)]
+        Parse the DJI/DJO3 file structure.
+         - 40-byte header (header_bytes already read)
+         - Then repeated frames of:
+             [4 bytes delta_time in ms] + [frame content: numCols * numRows x 2 bytes each]
         """
-        # Break down the 40-byte header
-        firmware_part = header_bytes[:4]  # 4 bytes from font.txt
-        header_part = header_bytes[4:36]  # next 32 bytes
-        signature = header_bytes[36:40]  # "DJO3"
+        firmware_part = header_bytes[:4]
+        header_part = header_bytes[4:36]
+        signature = header_bytes[36:40]
 
-        # Store it in self.header
         self.header['magic'] = firmware_part.decode('utf-8', errors='ignore').strip('\x00')
-        # We'll designate version=99 as "DJO3"
-        self.header['version'] = 99
+        self.header['version'] = 99  # designating this as the DJI/DJO3 format
 
-        # Hardcode charWidth and charHeight for the new format
-        # so other parts of the code won't break when they query them.
+        # Determine dimensions and framesize
+        if signature == b"DJO3":
+            # Older DJI version with fixed dimensions
+            numCols = 53
+            numRows = 20
+        else:
+            # Dimensions stored at offsets 0x24 and 0x26 (i.e. bytes 36 and 38)
+            numCols = header_bytes[0x24]
+            numRows = header_bytes[0x26]
+
+        framesize = numCols * numRows
+        print(framesize, numCols, numRows)
+
         self.header['config'] = {
-            'charWidth': 53,
-            'charHeight': 20,
+            'charWidth': numCols,
+            'charHeight': numRows,
             'fontWidth': 0,
             'fontHeight': 0,
             'xOffset': 0,
             'yOffset': 0,
             'fontVariant': '',
             'headerPart': header_part.decode('utf-8', errors='ignore'),
-            'signature': signature.decode('utf-8')
+            'signature': signature.decode('utf-8', errors='ignore')
         }
 
         frames = []
         while True:
-            # Try reading 4 bytes for delta_time
+            # Read delta_time (4 bytes, unsigned int)
             time_data = file.read(4)
             if len(time_data) < 4:
                 break  # End of file
 
             (delta_time_ms,) = struct.unpack('<I', time_data)
-            # Convert ms -> seconds
             timestamp_sec = float(delta_time_ms) / 1000.0
 
-            # Read 1060 x 2 bytes = 2120 bytes
-            frame_bytes = file.read(1060 * 2)
-            if len(frame_bytes) < (1060 * 2):
-                break  # End of file or incomplete data
+            # Read the frame content based on computed framesize (each word is 2 bytes)
+            frame_bytes = file.read(framesize * 2)
+            if len(frame_bytes) < framesize * 2:
+                break  # Incomplete frame
 
-            # Convert these 2120 bytes into a list of 16-bit ints
             frame_content = []
             for i in range(0, len(frame_bytes), 2):
-                val = struct.unpack('<H', frame_bytes[i:i + 2])[0]
+                val = struct.unpack('<H', frame_bytes[i:i+2])[0]
                 frame_content.append(val)
 
-            # Store the frame in our DataFrame
             frames.append({
                 "timestamp": timestamp_sec,
                 "frameNumber": None,
-                "frameSize": 1060,  # The length in 16-bit words
+                "frameSize": framesize,
                 "frameContent": frame_content
             })
 
-        # Convert the list of frames into a DataFrame
         self.frame_data = pd.DataFrame(frames)
 
     def _parse_old_format(self, file):
         """
-        Fallback for older .osd files, using the existing logic:
-         - Read "magic" (7 bytes), version (2 bytes),
-           then config including charWidth, etc.
-         - Then parse frames based on version 2 or 3.
+        Fallback for older .osd files.
         """
         self.header['magic'] = file.read(7).decode('utf-8')
         self.header['version'], = struct.unpack('<H', file.read(2))
 
-        # Fill config
         self.header['config'] = {
             'charWidth': struct.unpack('<B', file.read(1))[0],
             'charHeight': struct.unpack('<B', file.read(1))[0],
@@ -128,59 +125,43 @@ class OsdFileReader:
         while True:
             try:
                 if self.header['version'] == 3:
-                    # Version 3: [8 bytes double timestamp] + [4 bytes frame_size]
                     timestamp, = struct.unpack('<d', file.read(8))
                     frame_size, = struct.unpack('<I', file.read(4))
-
-                    # Next 'frame_size' bytes => 8-bit each
                     frame_data = file.read(frame_size)
                     if len(frame_data) < frame_size:
-                        break  # incomplete read
-                    # Convert bytes -> list of ints
+                        break
                     frame_data = list(frame_data)
-
                     frames.append({
                         "timestamp": timestamp,
                         "frameNumber": None,
                         "frameSize": frame_size,
                         "frameContent": frame_data
                     })
-
                 elif self.header['version'] == 2:
-                    # Version 2: [4 bytes frame_number] + [4 bytes frame_size]
                     frame_number, frame_size = struct.unpack('<II', file.read(8))
-
-                    raw_data = file.read(2 * frame_size)  # 16-bit each
+                    raw_data = file.read(2 * frame_size)
                     if len(raw_data) < (2 * frame_size):
-                        break  # incomplete read
-
-                    # Convert each 2 bytes into a 16-bit
+                        break
                     frame_data = []
                     for i in range(0, len(raw_data), 2):
                         val = struct.unpack('<H', raw_data[i:i + 2])[0]
                         frame_data.append(val)
-
-                    # The original code rearranged column-by-column -> line-by-line
                     frame_data = [
                         frame_data[i * height + j]
                         for j in range(height)
                         for i in range(len(frame_data) // height)
                     ]
-
                     frames.append({
                         "timestamp": None,
                         "frameNumber": frame_number,
                         "frameSize": frame_size,
                         "frameContent": frame_data
                     })
-
                 else:
-                    # Unsupported version
                     print(f"Unsupported version: {self.header['version']}")
                     break
-
             except (struct.error, EOFError):
-                break  # End of file or incomplete data
+                break
 
         self.frame_data = pd.DataFrame(frames)
 
