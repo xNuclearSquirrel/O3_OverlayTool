@@ -19,7 +19,7 @@ To launch the GUI:
 
 ## Required libraries
 - numpy, pandas, opencv-python, pillow
-- ~~FFMPEG (when using transparent backgrounds)~~ included now
+- ~~FFMPEG (when using transparent backgrounds)~~ included now.   
 The portable version should work without any libraries.
 
 ## TODO
